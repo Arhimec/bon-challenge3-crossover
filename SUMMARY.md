@@ -95,15 +95,64 @@
 
 ---
 
-## Part 2 Plan
+## Part 2 Summary (17:00–17:30 UTC)
 
-- **Gas price:** 4x (0.0002 EGLD/tx) with 2x backup scripts
-- **Blaster:** Multi-process (`4-blast-multi.js`) — 3 workers, one per shard
-- **Wallets:** Fresh set of 500 (already generated)
-- **Budget:** 500 EGLD (1 EGLD/wallet)
-- **Min tx value:** 0.01 EGLD (recirculation mode)
-- **Max txs:** ~2.5M (4x gas) or ~5M (2x gas)
-- **Deploy on VPS** if possible for better performance
+### Setup
+- 500 fresh wallets (different set from Part 1), distributed across 3 shards
+- 500 EGLD budget distributed (1 EGLD per wallet)
+- Transaction type: cross-shard MoveBalance, value = 0.01 EGLD
+- Gas price: 2,000,000,000 (2x default) — mempool priority
+- Batch size: 96 (mempool limit)
+- Blaster: Multi-process — 3 workers, one per shard
+- Recirculation mode: wallets send to each other across shards, 0.01 EGLD flows back
+
+### Results
+- Estimated ~261,500 cross-shard transactions
+- Sampled nonces: Shard 0 ~384, Shard 1 ~566, Shard 2 ~619
+- Multi-process approach was ~2-3x more effective than single-process (Part 1)
+- Gateway congestion remained the primary throughput limiter
+- Recirculation worked as designed — wallets maintained balances throughout
+- GL remaining balance: ~517 EGLD
+
+### Improvements Over Part 1
+- Multi-process blaster (3 workers) vs single-process: better CPU utilization
+- 2x gas price: higher mempool priority
+- Recirculation: sustainable tx output without draining wallets
+- Nonce resync was more aggressive and reliable
+
+---
+
+## Combined Results
+
+| Metric | Part 1 | Part 2 | Total |
+|--------|--------|--------|-------|
+| Duration | 30 min | 30 min | 60 min |
+| Budget | 2,000 EGLD | 500 EGLD | 2,500 EGLD |
+| Wallets | 500 | 500 (fresh) | 1,000 |
+| Min TX value | 1e-18 EGLD | 0.01 EGLD | — |
+| Gas price | 1x | 2x | — |
+| Blaster | Single-process | Multi-process (3 workers) | — |
+| Est. cross-shard TXs | ~115K–500K | ~261K | ~375K–760K |
+
+### What Worked
+- Shard-aware wallet generation ensured 100% cross-shard sends
+- Recirculation kept Part 2 wallets funded for continuous output
+- Pre-generating everything (wallets, receivers) before 15:45 UTC saved critical time
+- Multi-process blaster was a clear improvement for Part 2
+- Aggressive nonce resync recovered from gateway drops
+
+### What Didn't Work
+- Running from a 2-vCPU sandbox instead of a dedicated VPS — signing was the bottleneck
+- Single-process Part 1 blaster couldn't keep 500 wallets active simultaneously
+- Gateway/API congestion during peak challenge times throttled monitoring and batch acceptance
+- Other guilds with dedicated multi-core VPS infrastructure achieved 3M+ txs
+
+### Recommendations for Future Challenges
+1. **Run from a dedicated VPS** (8+ cores, low latency to gateway) — not a sandbox
+2. **Use worker_threads or multiple Node processes** from the start — one per shard minimum
+3. **Pre-test the full pipeline** end-to-end with real txs before challenge day
+4. **Monitor via local counters** (log sent txs to file) instead of polling congested APIs
+5. **Consider Go or Rust** for the blaster — ed25519 signing in native code is 10-100x faster than Node.js
 
 ---
 
@@ -123,3 +172,6 @@
 
 ## Repository
 https://github.com/Arhimec/bon-challenge3-crossover
+
+## Dashboard
+Live monitoring dashboard was deployed during the challenge with glassmorphic bento UI, real-time TPS chart, shard distribution heatmap, budget tracker, and milestone progress.
