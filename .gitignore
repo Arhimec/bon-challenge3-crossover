@@ -1,0 +1,7 @@
+node_modules/
+wallets-part1/
+wallets-part2/
+receivers.json
+guild-leader.pem
+*.pem
+secrets.json
