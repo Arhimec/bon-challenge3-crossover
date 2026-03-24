@@ -28,6 +28,13 @@ const partConfig = part === "part1" ? config.PART1 : config.PART2;
 const walletsDir = part === "part1" ? config.WALLETS_DIR_PART1 : config.WALLETS_DIR_PART2;
 const TX_VALUE = partConfig.MIN_TX_VALUE;
 
+// Compute max txs per wallet to avoid running out of funds
+const GAS_COST_SMALLEST = BigInt(config.GAS_LIMIT) * BigInt(config.GAS_PRICE);
+const COST_PER_TX = GAS_COST_SMALLEST + TX_VALUE;
+const WALLET_BUDGET = partConfig.EGLD_PER_WALLET;
+const WALLET_BUDGET_SMALLEST = BigInt(Math.floor(WALLET_BUDGET * 1e18));
+const MAX_TXS_PER_WALLET = Number(WALLET_BUDGET_SMALLEST / COST_PER_TX);
+
 // Stats
 let totalSent = 0;
 let totalFailed = 0;
@@ -118,9 +125,10 @@ async function walletBlaster(wallet, crossShardReceivers, startNonce) {
     let localSent = 0;
     let localFailed = 0;
 
-    while (running) {
-        // Build a batch of transactions
-        const batchSize = config.BATCH_SIZE;
+    while (running && localSent < MAX_TXS_PER_WALLET) {
+        // Build a batch of transactions (cap to remaining budget)
+        const remaining = MAX_TXS_PER_WALLET - localSent;
+        const batchSize = Math.min(config.BATCH_SIZE, remaining);
         const txBatch = [];
 
         for (let i = 0; i < batchSize && running; i++) {
@@ -216,6 +224,8 @@ function startStatsReporter() {
 async function main() {
     console.log(`[${ts()}] 🚀 Cross-Shard Blaster — ${part.toUpperCase()}`);
     console.log(`[${ts()}] TX value: ${partConfig.MIN_TX_VALUE_DISPLAY}`);
+    console.log(`[${ts()}] Max txs per wallet: ${MAX_TXS_PER_WALLET}`);
+    console.log(`[${ts()}] Max total txs: ${(MAX_TXS_PER_WALLET * partConfig.MAX_WALLETS).toLocaleString()}`);
     console.log(`[${ts()}] Batch size: ${config.BATCH_SIZE}`);
     console.log(`[${ts()}] Concurrent wallets: ${config.CONCURRENT_WALLETS}`);
     console.log(`[${ts()}] Gateway: ${config.GATEWAY_URL}`);
