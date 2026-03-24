@@ -30,7 +30,7 @@ if (!part || !["part1", "part2"].includes(part)) {
 const partConfig = part === "part1" ? config.PART1 : config.PART2;
 const walletsDir = part === "part1" ? config.WALLETS_DIR_PART1 : config.WALLETS_DIR_PART2;
 const TX_VALUE = partConfig.MIN_TX_VALUE;
-const GAS_PRICE = part === "part2" ? config.GAS_PRICE_2X : config.GAS_PRICE;
+const GAS_PRICE = part === "part2" ? config.GAS_PRICE_BOOST : config.GAS_PRICE;
 
 // Budget calculations
 const GAS_COST_SMALLEST = BigInt(config.GAS_LIMIT) * GAS_PRICE;

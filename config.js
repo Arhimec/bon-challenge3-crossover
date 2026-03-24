@@ -11,7 +11,7 @@ module.exports = {
     NUM_SHARDS: 3,         // shards 0, 1, 2
     GAS_LIMIT: 50000n,
     GAS_PRICE: 1000000000n,
-    GAS_PRICE_2X: 2000000000n,  // 2x priority for Part 2
+    GAS_PRICE_BOOST: 4000000000n,  // 4x priority for Part 2 (0.0002 EGLD/tx)
     TX_VERSION: 1,
 
     // Gas cost per tx in EGLD (50000 * 1e9 = 5e13 = 0.00005 EGLD)
