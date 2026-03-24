@@ -1,0 +1,25 @@
+{
+  "avgNonce": "231",
+  "estTotal": 115725,
+  "shardStats": {
+    "0": {
+      "count": 5,
+      "totalNonce": 505,
+      "minNonce": 101,
+      "maxNonce": 101
+    },
+    "1": {
+      "count": 0,
+      "totalNonce": 0,
+      "minNonce": null,
+      "maxNonce": 0
+    },
+    "2": {
+      "count": 15,
+      "totalNonce": 4124,
+      "minNonce": 197,
+      "maxNonce": 485
+    }
+  },
+  "sampledAt": "2026-03-24T16:30:53.707Z"
+}
