@@ -53,7 +53,7 @@ async function main() {
     const amountPerWallet = egldToSmallest(partConfig.EGLD_PER_WALLET);
     console.log(`[${ts()}] Amount per wallet: ${formatEgld(amountPerWallet.toString())} EGLD`);
 
-    const BATCH_SIZE = 100;
+    const BATCH_SIZE = config.MEMPOOL_LIMIT; // 96 = mempool limit
     let sent = 0;
     let failed = 0;
 

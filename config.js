@@ -42,7 +42,8 @@ module.exports = {
     },
 
     // Throughput tuning
-    BATCH_SIZE: 100,                // txs per batch sent to gateway
+    MEMPOOL_LIMIT: 96,              // max pending txs per sender in mempool
+    BATCH_SIZE: 96,                 // txs per batch sent to gateway (= MEMPOOL_LIMIT)
     CONCURRENT_WALLETS: 50,         // how many wallets send in parallel
     TX_DELAY_MS: 0,                 // delay between batches (0 = max speed)
     SEND_TIMEOUT_MS: 10000,         // timeout per API call
