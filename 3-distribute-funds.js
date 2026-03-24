@@ -13,9 +13,8 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const { Address, Transaction, TransactionComputer } = require("@multiversx/sdk-core");
-const { UserSecretKey, UserSigner } = require("@multiversx/sdk-wallet");
 const config = require("./config");
-const { egldToSmallest, formatEgld, sleep, ts } = require("./utils");
+const { egldToSmallest, formatEgld, sleep, ts, loadGuildLeaderKey } = require("./utils");
 
 const part = process.argv[2];
 if (!part || !["part1", "part2"].includes(part)) {
@@ -28,20 +27,7 @@ const walletsDir = part === "part1" ? config.WALLETS_DIR_PART1 : config.WALLETS_
 
 async function main() {
     // Load guild leader key
-    const glPem = fs.readFileSync(config.GUILD_LEADER_PEM, "utf8");
-    const glSkMatch = glPem.match(
-        /-----BEGIN PRIVATE KEY for (erd1\w+)-----\n([\s\S]+?)\n-----END PRIVATE KEY/
-    );
-    if (!glSkMatch) {
-        console.error("Could not parse guild leader PEM file");
-        process.exit(1);
-    }
-    const glAddress = glSkMatch[1];
-    const glKeyB64 = glSkMatch[2].replace(/\n/g, "");
-    const glKeyBytes = Buffer.from(glKeyB64, "base64");
-    // First 32 bytes = secret key
-    const glSk = new UserSecretKey(glKeyBytes.slice(0, 32));
-    const glSigner = new UserSigner(glSk);
+    const { address: glAddress, signer: glSigner } = loadGuildLeaderKey();
     const txComputer = new TransactionComputer();
 
     console.log(`[${ts()}] Guild Leader: ${glAddress}`);

@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const config = require("./config");
-const { formatEgld, ts, sleep } = require("./utils");
+const { formatEgld, ts, sleep, loadGuildLeaderKey } = require("./utils");
 
 const part = process.argv[2];
 if (!part || !["part1", "part2"].includes(part)) {
@@ -64,17 +64,16 @@ async function monitor() {
     console.log();
 
     // Guild leader balance
-    const glPem = fs.readFileSync(config.GUILD_LEADER_PEM, "utf8");
-    const glMatch = glPem.match(/-----BEGIN PRIVATE KEY for (erd1\w+)-----/);
-    if (glMatch) {
-        const glInfo = await getAccountInfo(glMatch[1]);
+    try {
+        const { address: glAddr } = loadGuildLeaderKey();
+        const glInfo = await getAccountInfo(glAddr);
         if (glInfo) {
-            console.log(`  Guild Leader: ${glMatch[1]}`);
+            console.log(`  Guild Leader: ${glAddr}`);
             console.log(`  GL Balance:   ${formatEgld(glInfo.balance)} EGLD`);
             console.log(`  GL Nonce:     ${glInfo.nonce}`);
             console.log();
         }
-    }
+    } catch (_) {}
 
     // Sample wallets for balance checks (checking all 500 is slow)
     const SAMPLE_SIZE = 20;

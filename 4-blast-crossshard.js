@@ -131,8 +131,27 @@ async function fetchNonces(wallets) {
 }
 
 /**
+ * Resync nonce from network
+ */
+async function resyncNonce(address) {
+    try {
+        const resp = await axios.get(
+            `${config.GATEWAY_URL}/address/${address}`,
+            { timeout: 5000 }
+        );
+        return BigInt(resp.data.data.account.nonce);
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
  * Fire transactions from a single wallet in a loop.
  * Sends to cross-shard partner wallets (which send back = recirculation).
+ * 
+ * Nonce strategy: optimistic send with aggressive resync.
+ * The gateway mempool accepts txs with nonces ahead of the current on-chain
+ * nonce (up to a gap). We send batches and resync if acceptance drops.
  */
 async function walletBlaster(wallet, crossShardTargets, startNonce) {
     const txComputer = new TransactionComputer();
@@ -141,11 +160,13 @@ async function walletBlaster(wallet, crossShardTargets, startNonce) {
     let receiverIdx = Math.floor(Math.random() * receivers.length);
     let localSent = 0;
     let localFailed = 0;
+    let consecutivePartial = 0; // track partial accepts for resync
 
     while (running) {
         // Build a batch of transactions
         const batchSize = config.BATCH_SIZE;
         const txBatch = [];
+        const batchStartNonce = nonce;
 
         for (let i = 0; i < batchSize && running; i++) {
             const receiverAddr = receivers[receiverIdx % receivers.length];
@@ -187,28 +208,39 @@ async function walletBlaster(wallet, crossShardTargets, startNonce) {
                 localSent += sent;
                 totalSent += sent;
                 const notSent = txBatch.length - sent;
+
                 if (notSent > 0) {
                     localFailed += notSent;
                     totalFailed += notSent;
+                    consecutivePartial++;
+
+                    // If not all txs accepted, resync nonce immediately
+                    // The gateway rejected some → our nonce is likely ahead
+                    if (sent === 0 || consecutivePartial >= 2) {
+                        const synced = await resyncNonce(wallet.address);
+                        if (synced !== null) {
+                            nonce = synced;
+                            consecutivePartial = 0;
+                        }
+                    } else {
+                        // Partial accept: roll nonce back to batchStart + sent
+                        nonce = batchStartNonce + BigInt(sent);
+                    }
+                } else {
+                    consecutivePartial = 0;
                 }
             } else {
                 localSent += txBatch.length;
                 totalSent += txBatch.length;
+                consecutivePartial = 0;
             }
         } catch (err) {
             totalApiErrors++;
-            // On error, try to resync nonce
-            if (err.response?.data?.error?.includes("nonce")) {
-                try {
-                    const resp = await axios.get(
-                        `${config.GATEWAY_URL}/address/${wallet.address}`,
-                        { timeout: 5000 }
-                    );
-                    nonce = BigInt(resp.data.data.account.nonce);
-                } catch (_) {}
-            }
+            // Resync nonce on any error
+            const synced = await resyncNonce(wallet.address);
+            if (synced !== null) nonce = synced;
             // Brief backoff on error
-            await sleep(100);
+            await sleep(50);
         }
 
         if (config.TX_DELAY_MS > 0) {

@@ -15,7 +15,7 @@ const axios = require("axios");
 const { Address, Transaction, TransactionComputer } = require("@multiversx/sdk-core");
 const { UserSecretKey, UserSigner } = require("@multiversx/sdk-wallet");
 const config = require("./config");
-const { formatEgld, sleep, ts } = require("./utils");
+const { formatEgld, sleep, ts, loadGuildLeaderKey } = require("./utils");
 
 const part = process.argv[2];
 if (!part || !["part1", "part2"].includes(part)) {
@@ -27,13 +27,7 @@ const walletsDir = part === "part1" ? config.WALLETS_DIR_PART1 : config.WALLETS_
 
 async function main() {
     // Get GL address
-    const glPem = fs.readFileSync(config.GUILD_LEADER_PEM, "utf8");
-    const glMatch = glPem.match(/-----BEGIN PRIVATE KEY for (erd1\w+)-----/);
-    if (!glMatch) {
-        console.error("Could not parse guild leader PEM");
-        process.exit(1);
-    }
-    const glAddress = glMatch[1];
+    const { address: glAddress } = loadGuildLeaderKey();
 
     // Load secrets
     const secretsPath = path.join(walletsDir, "secrets.json");
