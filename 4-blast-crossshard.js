@@ -30,9 +30,10 @@ if (!part || !["part1", "part2"].includes(part)) {
 const partConfig = part === "part1" ? config.PART1 : config.PART2;
 const walletsDir = part === "part1" ? config.WALLETS_DIR_PART1 : config.WALLETS_DIR_PART2;
 const TX_VALUE = partConfig.MIN_TX_VALUE;
+const GAS_PRICE = part === "part2" ? config.GAS_PRICE_2X : config.GAS_PRICE;
 
 // Budget calculations
-const GAS_COST_SMALLEST = BigInt(config.GAS_LIMIT) * BigInt(config.GAS_PRICE);
+const GAS_COST_SMALLEST = BigInt(config.GAS_LIMIT) * GAS_PRICE;
 const WALLET_BUDGET_SMALLEST = BigInt(Math.floor(partConfig.EGLD_PER_WALLET * 1e18));
 // With recirculation, only gas is consumed — tx value comes back from other wallets
 const MAX_TXS_PER_WALLET = Number(WALLET_BUDGET_SMALLEST / GAS_COST_SMALLEST);
@@ -178,7 +179,7 @@ async function walletBlaster(wallet, crossShardTargets, startNonce) {
                 receiver: new Address(receiverAddr),
                 value: TX_VALUE,
                 gasLimit: config.GAS_LIMIT,
-                gasPrice: config.GAS_PRICE,
+                gasPrice: GAS_PRICE,
                 chainID: config.CHAIN_ID,
                 version: config.TX_VERSION,
             });

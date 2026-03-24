@@ -17,6 +17,7 @@ const shard = parseInt(process.argv[3]);
 const partConfig = part === "part1" ? config.PART1 : config.PART2;
 const walletsDir = part === "part1" ? config.WALLETS_DIR_PART1 : config.WALLETS_DIR_PART2;
 const TX_VALUE = partConfig.MIN_TX_VALUE;
+const GAS_PRICE = part === "part2" ? config.GAS_PRICE_2X : config.GAS_PRICE;
 
 let running = true;
 process.on("SIGINT", () => { running = false; });
@@ -87,7 +88,7 @@ async function main() {
                     receiver: new Address(receiver),
                     value: TX_VALUE,
                     gasLimit: config.GAS_LIMIT,
-                    gasPrice: config.GAS_PRICE,
+                    gasPrice: GAS_PRICE,
                     chainID: config.CHAIN_ID,
                     version: config.TX_VERSION,
                 });
