@@ -3,7 +3,10 @@
 // Script 4: Cross-Shard Transaction Blaster
 // Fires MoveBalance transactions where sender and 
 // receiver are ALWAYS on different shards.
-// Maximum throughput mode.
+// 
+// RECIRCULATION MODE: Wallets send to each other
+// across shards so the tx value (0.01 EGLD in Part 2)
+// flows back. Only gas is truly consumed.
 // ============================================
 // Usage:
 //   node 4-blast-crossshard.js part1
@@ -28,12 +31,11 @@ const partConfig = part === "part1" ? config.PART1 : config.PART2;
 const walletsDir = part === "part1" ? config.WALLETS_DIR_PART1 : config.WALLETS_DIR_PART2;
 const TX_VALUE = partConfig.MIN_TX_VALUE;
 
-// Compute max txs per wallet to avoid running out of funds
+// Budget calculations
 const GAS_COST_SMALLEST = BigInt(config.GAS_LIMIT) * BigInt(config.GAS_PRICE);
-const COST_PER_TX = GAS_COST_SMALLEST + TX_VALUE;
-const WALLET_BUDGET = partConfig.EGLD_PER_WALLET;
-const WALLET_BUDGET_SMALLEST = BigInt(Math.floor(WALLET_BUDGET * 1e18));
-const MAX_TXS_PER_WALLET = Number(WALLET_BUDGET_SMALLEST / COST_PER_TX);
+const WALLET_BUDGET_SMALLEST = BigInt(Math.floor(partConfig.EGLD_PER_WALLET * 1e18));
+// With recirculation, only gas is consumed — tx value comes back from other wallets
+const MAX_TXS_PER_WALLET = Number(WALLET_BUDGET_SMALLEST / GAS_COST_SMALLEST);
 
 // Stats
 let totalSent = 0;
@@ -48,38 +50,53 @@ process.on("SIGINT", () => {
     running = false;
 });
 
-async function loadWalletsAndReceivers() {
-    // Load sender wallets with secrets
+async function loadWallets() {
     const secretsPath = path.join(walletsDir, "secrets.json");
     const secrets = JSON.parse(fs.readFileSync(secretsPath, "utf8"));
 
-    // Load receivers
-    const receivers = JSON.parse(fs.readFileSync(config.RECEIVERS_FILE, "utf8"));
+    // Group wallets by shard and create signers
+    const walletsByShard = { 0: [], 1: [], 2: [] };
+    const allWallets = [];
 
-    // Build cross-shard receiver map: for each sender shard, list all receiver shards != sender shard
-    const crossShardReceivers = {};
-    for (let shard = 0; shard < config.NUM_SHARDS; shard++) {
-        crossShardReceivers[shard] = [];
-        for (let otherShard = 0; otherShard < config.NUM_SHARDS; otherShard++) {
-            if (otherShard !== shard) {
-                crossShardReceivers[shard].push(...receivers[otherShard.toString()]);
-            }
-        }
-    }
-
-    // Pre-create signers for each wallet
-    const wallets = secrets.map((w) => {
+    for (const w of secrets) {
         const sk = UserSecretKey.fromString(w.secretKeyHex);
-        return {
+        const wallet = {
             index: w.index,
             address: w.address,
             shard: w.shard,
             signer: new UserSigner(sk),
             addressObj: new Address(w.address),
         };
-    });
+        walletsByShard[w.shard].push(wallet);
+        allWallets.push(wallet);
+    }
 
-    return { wallets, crossShardReceivers };
+    return { allWallets, walletsByShard };
+}
+
+/**
+ * Build cross-shard pairs: each wallet gets a list of partner wallets
+ * on OTHER shards to send to. The partners send back, creating circulation.
+ */
+function buildCrossShardTargets(walletsByShard) {
+    const targets = new Map(); // address → array of cross-shard wallet addresses
+
+    for (let shard = 0; shard < config.NUM_SHARDS; shard++) {
+        const senders = walletsByShard[shard];
+        // Collect all wallets on other shards
+        const crossShardWallets = [];
+        for (let otherShard = 0; otherShard < config.NUM_SHARDS; otherShard++) {
+            if (otherShard !== shard) {
+                crossShardWallets.push(...walletsByShard[otherShard].map(w => w.address));
+            }
+        }
+
+        for (const sender of senders) {
+            targets.set(sender.address, crossShardWallets);
+        }
+    }
+
+    return targets;
 }
 
 /**
@@ -99,7 +116,6 @@ async function fetchNonces(wallets) {
                 );
                 return { address: w.address, nonce: BigInt(resp.data.data.account.nonce) };
             } catch (err) {
-                // Default to 0 if fetch fails
                 return { address: w.address, nonce: 0n };
             }
         });
@@ -108,27 +124,27 @@ async function fetchNonces(wallets) {
             nonces.set(r.address, r.nonce);
         }
         if (i % 200 === 0 && i > 0) {
-            console.log(`[${ts()}]   Fetched nonces for ${i + batch.length}/${wallets.length} wallets...`);
+            console.log(`[${ts()}]   Fetched nonces for ${Math.min(i + BATCH, wallets.length)}/${wallets.length} wallets...`);
         }
     }
     return nonces;
 }
 
 /**
- * Fire transactions from a single wallet in a loop
+ * Fire transactions from a single wallet in a loop.
+ * Sends to cross-shard partner wallets (which send back = recirculation).
  */
-async function walletBlaster(wallet, crossShardReceivers, startNonce) {
+async function walletBlaster(wallet, crossShardTargets, startNonce) {
     const txComputer = new TransactionComputer();
-    const receivers = crossShardReceivers[wallet.shard];
+    const receivers = crossShardTargets.get(wallet.address);
     let nonce = startNonce;
     let receiverIdx = Math.floor(Math.random() * receivers.length);
     let localSent = 0;
     let localFailed = 0;
 
-    while (running && localSent < MAX_TXS_PER_WALLET) {
-        // Build a batch of transactions (cap to remaining budget)
-        const remaining = MAX_TXS_PER_WALLET - localSent;
-        const batchSize = Math.min(config.BATCH_SIZE, remaining);
+    while (running) {
+        // Build a batch of transactions
+        const batchSize = config.BATCH_SIZE;
         const txBatch = [];
 
         for (let i = 0; i < batchSize && running; i++) {
@@ -224,57 +240,46 @@ function startStatsReporter() {
 async function main() {
     console.log(`[${ts()}] 🚀 Cross-Shard Blaster — ${part.toUpperCase()}`);
     console.log(`[${ts()}] TX value: ${partConfig.MIN_TX_VALUE_DISPLAY}`);
-    console.log(`[${ts()}] Max txs per wallet: ${MAX_TXS_PER_WALLET}`);
-    console.log(`[${ts()}] Max total txs: ${(MAX_TXS_PER_WALLET * partConfig.MAX_WALLETS).toLocaleString()}`);
+    console.log(`[${ts()}] Mode: RECIRCULATION (wallets send to each other across shards)`);
+    console.log(`[${ts()}] Gas-limited max txs/wallet: ${MAX_TXS_PER_WALLET.toLocaleString()}`);
+    console.log(`[${ts()}] Gas-limited max total txs: ${(MAX_TXS_PER_WALLET * partConfig.MAX_WALLETS).toLocaleString()}`);
     console.log(`[${ts()}] Batch size: ${config.BATCH_SIZE}`);
     console.log(`[${ts()}] Concurrent wallets: ${config.CONCURRENT_WALLETS}`);
     console.log(`[${ts()}] Gateway: ${config.GATEWAY_URL}`);
     console.log();
 
-    // Load wallets and receivers
-    console.log(`[${ts()}] Loading wallets and receivers...`);
-    const { wallets, crossShardReceivers } = await loadWalletsAndReceivers();
-    console.log(`[${ts()}] Loaded ${wallets.length} sender wallets`);
+    // Load wallets
+    console.log(`[${ts()}] Loading wallets...`);
+    const { allWallets, walletsByShard } = await loadWallets();
+    console.log(`[${ts()}] Loaded ${allWallets.length} sender wallets`);
+
+    // Build cross-shard targets (wallet-to-wallet for recirculation)
+    const crossShardTargets = buildCrossShardTargets(walletsByShard);
 
     for (let s = 0; s < config.NUM_SHARDS; s++) {
-        const walletsInShard = wallets.filter((w) => w.shard === s).length;
-        const receiversForShard = crossShardReceivers[s].length;
-        console.log(`  Shard ${s}: ${walletsInShard} senders → ${receiversForShard} cross-shard receivers`);
+        const count = walletsByShard[s].length;
+        const targetCount = crossShardTargets.get(walletsByShard[s][0]?.address)?.length || 0;
+        console.log(`  Shard ${s}: ${count} senders → ${targetCount} cross-shard wallet targets`);
     }
 
     // Fetch all nonces
     console.log(`\n[${ts()}] Fetching nonces...`);
-    const nonces = await fetchNonces(wallets);
+    const nonces = await fetchNonces(allWallets);
     console.log(`[${ts()}] Nonces fetched for ${nonces.size} wallets`);
 
-    // Launch blasters in parallel batches
+    // Launch all wallet blasters concurrently
     console.log(`\n[${ts()}] 🔥 STARTING BLAST — Press Ctrl+C to stop`);
     startTime = Date.now();
     const statsInterval = startStatsReporter();
 
-    // Process wallets in concurrent groups
-    const CONCURRENT = config.CONCURRENT_WALLETS;
-    const results = [];
+    // Launch all wallets at once
+    const promises = allWallets.map((w) => {
+        const startNonce = nonces.get(w.address) || 0n;
+        return walletBlaster(w, crossShardTargets, startNonce);
+    });
 
-    for (let i = 0; i < wallets.length; i += CONCURRENT) {
-        if (!running) break;
-        const batch = wallets.slice(i, i + CONCURRENT);
-        const promises = batch.map((w) => {
-            const startNonce = nonces.get(w.address) || 0n;
-            return walletBlaster(w, crossShardReceivers, startNonce);
-        });
-
-        // Don't await all at once — they run indefinitely
-        // Instead, run all wallets concurrently
-        if (i === 0) {
-            // First batch — start all and let them run
-            // For subsequent wallets, we chain them
-        }
-        results.push(...promises);
-    }
-
-    // Wait for all to complete (they complete when running = false)
-    await Promise.all(results);
+    // Wait for all to complete (they complete when running = false via Ctrl+C)
+    await Promise.all(promises);
 
     clearInterval(statsInterval);
 
